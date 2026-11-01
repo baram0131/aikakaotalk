@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI 카톡 센스 답장 메이커</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Google Fonts (Noto Sans KR) -->
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Noto Sans KR', 'sans-serif'],
+          },
+          colors: {
+            kakao: {
+              yellow: '#FEE500',
+              brown: '#3C1E1E',
+              bg: '#ABC1D1',
+              chatBg: '#f2f2f2'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      background-color: #f1f5f9;
+    }
+    .chat-bubble-left {
+      border-radius: 18px 18px 18px 4px;
+    }
+    .chat-bubble-right {
+      border-radius: 18px 18px 4px 18px;
+    }
+    .drag-active {
+      border-color: #3b82f6 !important;
+      background-color: #eff6ff !important;
+    }
+  </style>
+</head>
+<body class="text-slate-800 font-sans min-h-screen flex flex-col justify-between">
+
+  <!-- Notification Toast -->
+  <div id="toast" class="fixed top-5 right-5 transform translate-x-full opacity-0 transition-all duration-300 z-50 bg-slate-900 text-white px-5 py-3 rounded-xl shadow-xl flex items-center gap-3">
+    <i id="toast-icon" class="fa-solid fa-check-circle text-green-400"></i>
+    <span id="toast-msg">복사되었습니다!</span>
+  </div>
+
+  <!-- API Key Modal -->
+  <div id="api-modal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between">
+        <h3 class="font-bold text-slate-800 text-lg flex items-center gap-2">
+          <i class="fa-solid fa-key text-amber-500"></i> Gemini API 키 설정
+        </h3>
+        <button onclick="toggleApiModal(false)" class="text-slate-400 hover:text-slate-600">
+          <i class="fa-solid fa-xmark text-lg"></i>
+        </button>
+      </div>
+      <p class="text-xs text-slate-500 leading-relaxed">
+        Google AI Studio에서 발급받은 개인 Gemini API 키를 입력하시면 내 API 한도로 직접 사용할 수 있습니다. (API 키를 입력해야 답장을 생성할 수 있습니다)
+      </p>
+      <input type="password" id="user-api-key" placeholder="AIzaSy..." class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      <div class="space-y-2">
+        <button id="model-check-btn" onclick="checkModels()" class="text-sm font-semibold text-blue-700 bg-blue-50 px-3 py-2 rounded-lg disabled:opacity-50">모델 목록 조회</button>
+        <label for="user-api-model" class="block text-xs font-semibold text-slate-600">답장 생성 모델</label>
+        <select id="user-api-model" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm">
+          <option value="">모델 조회 후 자동 선택</option>
+        </select>
+        <p id="model-check-status" role="status" class="text-xs text-slate-600 whitespace-pre-wrap break-words">모델 목록 조회는 답장을 생성하지 않습니다. 생성 가능 여부와 한도는 실제 답장 요청에서 확인됩니다.</p>
+      </div>
+      <div class="flex justify-end gap-2">
+        <button onclick="saveApiKey()" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-all">
+          저장하기
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Header -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-40">
+    <div class="max-w-2xl mx-auto px-4 py-3.5 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-2xl bg-kakao-yellow text-kakao-brown flex items-center justify-center text-xl font-black shadow-sm">
+          <i class="fa-solid fa-comment-dots"></i>
+        </div>
+        <div>
+          <h1 class="font-bold text-base leading-tight text-slate-900">귀찮을 땐? AI 카톡 답장기</h1>
+          <p class="text-[11px] text-slate-500">상황·관계·말투 맞춤형 자동 추천</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <button onclick="toggleApiModal(true)" class="text-xs text-slate-600 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5">
+          <i class="fa-solid fa-gear"></i> API 설정
+        </button>
+        <button onclick="resetAll()" class="text-xs text-slate-500 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 px-2.5 py-1.5 rounded-xl transition-all">
+          <i class="fa-solid fa-rotate-right"></i>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="max-w-2xl mx-auto w-full px-4 py-5 flex-grow space-y-5">
+
+    <section id="api-error" role="alert" class="hidden rounded-2xl border border-rose-200 bg-rose-50 p-4 space-y-2">
+      <h2 class="font-bold text-sm text-rose-800">요청을 완료하지 못했습니다</h2>
+      <pre id="api-error-detail" class="text-xs text-rose-900 whitespace-pre-wrap break-words font-sans"></pre>
+      <p id="api-error-help" class="text-xs text-slate-700 leading-relaxed"></p>
+      <button onclick="toggleApiModal(true)" class="text-xs font-bold text-blue-700 underline">API 설정 열기</button>
+    </section>
+
+    <!-- Step 1: User Profile & Relationship -->
+    <section class="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/80 shadow-sm space-y-4">
+      <div class="flex items-center gap-2 border-b border-slate-100 pb-2.5">
+        <span class="w-5 h-5 rounded-full bg-blue-100 text-blue-600 font-semibold text-xs flex items-center justify-center">1</span>
+        <h2 class="font-bold text-slate-800 text-sm">내 정보 및 분위기 설정</h2>
+      </div>
+
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <!-- Age Input -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">내 나이</label>
+          <div class="relative">
+            <input type="number" id="user-age" value="25" min="1" max="100" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <span class="absolute right-2.5 top-2 text-[11px] text-slate-400">세</span>
+          </div>
+        </div>
+
+        <!-- Gender Selection -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">내 성별</label>
+          <select id="user-gender" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <option value="남성">남성</option>
+            <option value="여성">여성</option>
+            <option value="기타">기타</option>
+          </select>
+        </div>
+
+        <!-- Relationship Selection -->
+        <div class="col-span-2 sm:col-span-2">
+          <label class="block text-xs font-semibold text-slate-600 mb-1">상대와의 관계 <span class="text-rose-500">*</span></label>
+          <select id="user-relation" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <option value="친한 친구 (반말)">친한 친구 (편한 반말)</option>
+            <option value="연인 / 썸">연인 / 썸 (다정·애교)</option>
+            <option value="부모님">부모님 (살가움·존댓말)</option>
+            <option value="선생님 / 교수님">선생님 / 교수님 (깍듯함)</option>
+            <option value="직장상사 / 동료">직장상사 / 동료 (비즈니스 예의)</option>
+            <option value="어른 / 선배">어른 / 선배 (공손함)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Tone / Style Selection -->
+      <div>
+        <label class="block text-xs font-semibold text-slate-600 mb-1.5">선호하는 어조 / 말투 스타일</label>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+          <label class="cursor-pointer border border-slate-200 rounded-xl p-2 text-center bg-slate-50 hover:bg-blue-50 has-[:checked]:bg-blue-500 has-[:checked]:text-white has-[:checked]:border-blue-500 transition-all">
+            <input type="radio" name="user-tone" value="자연스럽고 센스있게" checked class="hidden">
+            <span>✨ 센스·자연스러움</span>
+          </label>
+          <label class="cursor-pointer border border-slate-200 rounded-xl p-2 text-center bg-slate-50 hover:bg-blue-50 has-[:checked]:bg-blue-500 has-[:checked]:text-white has-[:checked]:border-blue-500 transition-all">
+            <input type="radio" name="user-tone" value="정중하고 격식있게" class="hidden">
+            <span>🙇‍♂️ 정중·격식</span>
+          </label>
+          <label class="cursor-pointer border border-slate-200 rounded-xl p-2 text-center bg-slate-50 hover:bg-blue-50 has-[:checked]:bg-blue-500 has-[:checked]:text-white has-[:checked]:border-blue-500 transition-all">
+            <input type="radio" name="user-tone" value="귀엽고 다정하게 (애교 살짝)" class="hidden">
+            <span>🥰 다정·애교</span>
+          </label>
+          <label class="cursor-pointer border border-slate-200 rounded-xl p-2 text-center bg-slate-50 hover:bg-blue-50 has-[:checked]:bg-blue-500 has-[:checked]:text-white has-[:checked]:border-blue-500 transition-all">
+            <input type="radio" name="user-tone" value="무심하지만 짧고 깔끔하게" class="hidden">
+            <span>😎 무심·시크</span>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <!-- Step 2: Upload Inputs (Separated Sections with Drag and Drop) -->
+    <section class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      
+      <!-- Section 1: Previous Conversation Context -->
+      <div class="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm flex flex-col justify-between space-y-3">
+        <div>
+          <div class="flex items-center justify-between border-b border-slate-100 pb-2 mb-2">
+            <div class="flex items-center gap-1.5">
+              <span class="w-5 h-5 rounded-full bg-blue-100 text-blue-600 font-semibold text-xs flex items-center justify-center">2A</span>
+              <h2 class="font-bold text-slate-800 text-xs">이전 대화 맥락 (선택)</h2>
+            </div>
+            <span class="text-[10px] text-slate-400">맥락 파악용</span>
+          </div>
+
+          <!-- Drag and Drop Box A -->
+          <div id="prev-dropzone" 
+               ondragover="handleDragOver(event, 'prev')" 
+               ondragleave="handleDragLeave('prev')" 
+               ondrop="handleDrop(event, 'prev')"
+               class="relative group border-2 border-dashed border-slate-200 rounded-xl p-3 text-center bg-slate-50/50 hover:bg-blue-50/30 transition-all cursor-pointer">
+            <input type="file" id="prev-img-input" accept="image/*" class="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10" onchange="handleImageUpload(event, 'prev')">
+            
+            <div id="prev-img-placeholder" class="space-y-1">
+              <i class="fa-regular fa-image text-xl text-slate-400 group-hover:text-blue-500 transition-colors"></i>
+              <p class="text-xs text-slate-600 font-medium">이전 대화 캡처 첨부</p>
+              <p class="text-[10px] text-slate-400">드래그 & 드롭 가능</p>
+            </div>
+
+            <div id="prev-img-preview-container" class="hidden relative">
+              <img id="prev-img-preview" src="" class="max-h-32 mx-auto rounded-lg shadow-sm border border-slate-200 object-contain">
+              <button type="button" onclick="removeImage('prev', event)" class="absolute -top-2 -right-2 bg-rose-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs shadow-md z-20 hover:bg-rose-600">
+                <i class="fa-solid fa-xmark"></i>
+              </button>
+            </div>
+          </div>
+
+          <textarea id="prev-text-input" rows="2" class="mt-2.5 w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="추가 설명 (예: 아까 싸우고 처음 보내는 톡)"></textarea>
+        </div>
+      </div>
+
+      <!-- Section 2: Target Message to Reply -->
+      <div class="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm flex flex-col justify-between space-y-3">
+        <div>
+          <div class="flex items-center justify-between border-b border-slate-100 pb-2 mb-2">
+            <div class="flex items-center gap-1.5">
+              <span class="w-5 h-5 rounded-full bg-rose-100 text-rose-600 font-semibold text-xs flex items-center justify-center">2B</span>
+              <h2 class="font-bold text-slate-800 text-xs">답장할 상대 연락 (필수)</h2>
+            </div>
+            <span class="text-[10px] text-rose-500 font-medium">핵심 질문</span>
+          </div>
+
+          <!-- Drag and Drop Box B -->
+          <div id="target-dropzone" 
+               ondragover="handleDragOver(event, 'target')" 
+               ondragleave="handleDragLeave('target')" 
+               ondrop="handleDrop(event, 'target')"
+               class="relative group border-2 border-dashed border-slate-200 rounded-xl p-3 text-center bg-slate-50/50 hover:bg-rose-50/30 transition-all cursor-pointer">
+            <input type="file" id="target-img-input" accept="image/*" class="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10" onchange="handleImageUpload(event, 'target')">
+            
+            <div id="target-img-placeholder" class="space-y-1">
+              <i class="fa-regular fa-comment-dots text-xl text-slate-400 group-hover:text-rose-500 transition-colors"></i>
+              <p class="text-xs text-slate-600 font-medium">답장할 연락 캡처 첨부</p>
+              <p class="text-[10px] text-slate-400">드래그 & 드롭 가능</p>
+            </div>
+
+            <div id="target-img-preview-container" class="hidden relative">
+              <img id="target-img-preview" src="" class="max-h-32 mx-auto rounded-lg shadow-sm border border-slate-200 object-contain">
+              <button type="button" onclick="removeImage('target', event)" class="absolute -top-2 -right-2 bg-rose-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs shadow-md z-20 hover:bg-rose-600">
+                <i class="fa-solid fa-xmark"></i>
+              </button>
+            </div>
+          </div>
+
+          <input type="text" id="target-text-input" class="mt-2.5 w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs focus:outline-none focus:ring-2 focus:ring-rose-500" placeholder="또는 텍스트 입력 (예: 오늘 저녁 먹을래?)">
+        </div>
+      </div>
+
+    </section>
+
+    <!-- Specific Direction / Goal -->
+    <section class="bg-white rounded-2xl p-3.5 border border-slate-200/80 shadow-sm">
+      <label class="block text-xs font-semibold text-slate-600 mb-1 flex items-center gap-1">
+        <i class="fa-solid fa-bullseye text-blue-500"></i> 답장의 목적 / 원하는 결과 (선택)
+      </label>
+      <input type="text" id="custom-direction" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="예: 약속 은근히 거절하기 / 기분 안 상하게 미루기 / 신나서 응하기">
+    </section>
+
+    <!-- Generate Button -->
+    <button id="generate-btn" onclick="generateReplies()" class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold py-3.5 px-6 rounded-2xl shadow-lg shadow-blue-500/25 transition-all flex items-center justify-center gap-2 active:scale-[0.99]">
+      <i class="fa-solid fa-wand-magic-sparkles"></i>
+      <span>맞춤 추천 답장 4가지 생성하기</span>
+    </button>
+
+    <!-- Loading Spinner State -->
+    <div id="loading-state" class="hidden bg-white rounded-2xl p-8 border border-slate-200 shadow-sm text-center space-y-3">
+      <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-blue-500 border-t-transparent"></div>
+      <p class="text-sm font-semibold text-slate-700">Gemini가 이미지를 판독하고 답장을 작성 중입니다...</p>
+      <p class="text-xs text-slate-400">대화 맥락과 요청하신 관계/말투에 딱 맞춰 다듬고 있어요.</p>
+    </div>
+
+    <!-- Step 3: Generated Replies Output (Messenger Style Preview) -->
+    <section id="results-section" class="hidden space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="font-bold text-slate-900 text-sm flex items-center gap-1.5">
+          <i class="fa-solid fa-comments text-amber-500"></i> AI 추천 답장 4선
+        </h2>
+        <span id="detected-msg-badge" class="text-[11px] text-slate-500 bg-slate-200 px-2.5 py-1 rounded-full"></span>
+      </div>
+
+      <!-- Cards Container -->
+      <div class="grid grid-cols-1 gap-3.5" id="reply-cards-container"></div>
+    </section>
+
+  </main>
+
+  <footer class="bg-white border-t border-slate-200 py-3 text-center text-[11px] text-slate-400">
+    <p>Powered by Google Gemini API · 작성된 이미지와 정보는 서버에 저장되지 않습니다.</p>
+  </footer>
+
+  <script>
+    let prevImageBase64 = null;
+    let targetImageBase64 = null;
+
+    const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/';
+    let availableGeminiModels = [];
+    let modelListKey = '';
+
+    function redactApiSecret(value) {
+      let text = String(value || '');
+      const keys = [localStorage.getItem('custom_gemini_key'), document.getElementById('user-api-key').value];
+      for (const key of keys) {
+        if (key?.trim()) text = text.split(key.trim()).join('[API 키 숨김]');
+      }
+      return text.replace(/AIza[\w-]+/g, '[API 키 숨김]');
+    }
+
+    function apiIssue(code, message, help) {
+      const error = new Error(message);
+      error.code = code;
+      error.help = help;
+      return error;
+    }
+
+    function clearApiError() {
+      document.getElementById('api-error').classList.add('hidden');
+      document.getElementById('api-error-detail').innerText = '';
+      document.getElementById('api-error-help').innerText = '';
+    }
+
+    function showApiError(error, action) {
+      const detail = redactApiSecret(`${action}\n${error.code || 'ERROR'}: ${error.message || '알 수 없는 오류'}`);
+      document.getElementById('api-error-detail').innerText = detail;
+      document.getElementById('api-error-help').innerText = redactApiSecret(error.help || '표시된 오류 문구를 확인한 후 다시 시도해주세요.');
+      document.getElementById('api-error').classList.remove('hidden');
+      showToast('요청에 실패했습니다. 화면의 상세 오류를 확인해주세요.', true);
+      return detail;
+    }
+
+    function helpForStatus(status) {
+      if (status === 400) return '키 오류 또는 요청 형식·기능 제한일 수 있습니다. 위의 Google 오류 문구를 확인해주세요. 키가 유효하다면 모델 목록을 다시 조회해 다른 모델을 선택해주세요.';
+      if (status === 401 || status === 403) return 'Google AI Studio에서 키의 유효성, 연결된 프로젝트와 API 사용 권한·키 제한 설정을 확인해주세요. 이 문구만으로 키가 틀렸다고 단정할 수는 없습니다.';
+      if (status === 402) return 'Google AI Studio에서 연결된 프로젝트의 결제 및 잔액 상태를 확인해주세요.';
+      if (status === 404) return '선택한 모델을 사용할 수 없을 수 있습니다. API 설정에서 모델 목록을 다시 조회하고 다른 모델로 시도해주세요.';
+      if (status === 429) return '요청 속도 또는 사용량 한도에 걸렸습니다. 잠시 후 시도하거나 Google AI Studio에서 해당 프로젝트·모델의 한도와 결제 상태를 확인해주세요. 한도가 0이면 기다려도 해결되지 않을 수 있습니다.';
+      if (status === 408 || status >= 500) return 'Google 서비스가 일시적으로 응답하지 못했을 수 있습니다. 잠시 후 다시 시도해주세요.';
+      return '위의 Google 오류 문구를 확인해주세요. 오류 내용만 공유하고 API 키는 보내지 마세요.';
+    }
+
+    async function geminiJson(path, apiKey, body) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), body ? 90000 : 30000);
+      try {
+        const response = await fetch(GEMINI_BASE + path, {
+          method: body ? 'POST' : 'GET',
+          headers: { 'x-goog-api-key': apiKey, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+          ...(body ? { body: JSON.stringify(body) } : {}),
+          signal: controller.signal
+        });
+        let result;
+        try {
+          result = await response.json();
+        } catch {
+          throw apiIssue(`HTTP ${response.status}`, 'Google 응답이 JSON 형식이 아닙니다.', '네트워크·프록시 상태를 확인하고 다시 시도해주세요.');
+        }
+        if (!response.ok || result?.error) {
+          const status = response.status;
+          const message = typeof result?.error?.message === 'string' ? result.error.message : 'Google API가 요청을 거절했습니다.';
+          const reason = typeof result?.error?.status === 'string' ? result.error.status : '';
+          throw apiIssue(`HTTP ${status}${reason ? ' / ' + reason : ''}`, message.split(apiKey).join('[API 키 숨김]'), helpForStatus(status));
+        }
+        if (!result || typeof result !== 'object') throw apiIssue('INVALID_RESPONSE', 'Google 응답을 읽을 수 없습니다.', '잠시 후 다시 시도해주세요.');
+        return result;
+      } catch (error) {
+        if (error.name === 'AbortError') throw apiIssue('TIMEOUT', '정해진 시간 안에 응답을 받지 못했습니다.', '잠시 후 다시 시도하거나 다른 모델을 선택해주세요.');
+        if (error.code) throw error;
+        throw apiIssue('NETWORK_ERROR', 'Google API에 연결하지 못했습니다.', '인터넷 연결, 브라우저의 차단 기능, 네트워크 접근 제한을 확인해주세요. 서버의 오류 응답을 받지 못해 키·할당량 문제인지는 확인할 수 없습니다.');
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+
+    function modelRank(model) {
+      const name = model.name.toLowerCase();
+      const version = name.match(/gemini-(\d+(?:\.\d+)?)/);
+      return (/flash/.test(name) ? 1000 : 0) + (!/preview|exp(?:erimental)?/.test(name) ? 500 : 0) + (version ? Number(version[1]) : 0);
+    }
+
+    function fillModelSelect(models, preferred) {
+      const select = document.getElementById('user-api-model');
+      select.innerHTML = '';
+      if (!models.length) {
+        const option = document.createElement('option');
+        option.value = '';
+        option.innerText = '모델 조회 후 자동 선택';
+        select.appendChild(option);
+        select.value = '';
+        return;
+      }
+      for (const model of models) {
+        const option = document.createElement('option');
+        option.value = model.name;
+        option.innerText = model.name.replace(/^models\//, '');
+        select.appendChild(option);
+      }
+      select.value = models.some(model => model.name === preferred) ? preferred : models[0].name;
+    }
+
+    async function loadGeminiModels(apiKey) {
+      const models = [];
+      const tokens = new Set();
+      let pageToken = '';
+      do {
+        const result = await geminiJson('models?pageSize=100' + (pageToken ? '&pageToken=' + encodeURIComponent(pageToken) : ''), apiKey);
+        if (!Array.isArray(result.models)) throw apiIssue('INVALID_MODEL_LIST', '모델 목록 응답을 읽을 수 없습니다.', '잠시 후 모델 목록을 다시 조회해주세요.');
+        models.push(...result.models);
+        pageToken = result.nextPageToken || '';
+        if (pageToken && (tokens.has(pageToken) || tokens.size >= 20)) throw apiIssue('INVALID_MODEL_LIST', '모델 목록의 페이지 처리가 중단되었습니다.', '잠시 후 모델 목록을 다시 조회해주세요.');
+        tokens.add(pageToken);
+      } while (pageToken);
+      const names = new Set();
+      const filtered = models.filter(model => {
+        if (typeof model?.name !== 'string' || !/^models\/gemini-[a-z0-9._-]+$/i.test(model.name)) return false;
+        if (!model.supportedGenerationMethods?.includes('generateContent')) return false;
+        if (/image|audio|tts|live|robotic|computer-use|deep-research|embedding/i.test(model.name)) return false;
+        if (names.has(model.name)) return false;
+        names.add(model.name);
+        return true;
+      }).sort((a, b) => modelRank(b) - modelRank(a) || a.name.localeCompare(b.name));
+      if (!filtered.length) throw apiIssue('NO_TEXT_MODEL', '답장 생성에 사용할 Gemini 텍스트 모델이 목록에 없습니다.', 'Google AI Studio에서 해당 프로젝트의 Gemini API 사용 가능 여부를 확인해주세요.');
+      availableGeminiModels = filtered;
+      modelListKey = apiKey;
+      return filtered;
+    }
+
+    function toggleApiModal(show) {
+      const modal = document.getElementById('api-modal');
+      if (show) {
+        const key = localStorage.getItem('custom_gemini_key') || '';
+        document.getElementById('user-api-key').value = key;
+        fillModelSelect(modelListKey === key ? availableGeminiModels : [], localStorage.getItem('custom_gemini_model'));
+        modal.classList.remove('hidden');
+      } else modal.classList.add('hidden');
+    }
+
+    async function checkModels() {
+      const apiKey = document.getElementById('user-api-key').value.trim();
+      const button = document.getElementById('model-check-btn');
+      const status = document.getElementById('model-check-status');
+      if (button.disabled) return;
+      if (!apiKey) { status.innerText = '먼저 Gemini API 키를 입력해주세요.'; return; }
+      clearApiError();
+      button.disabled = true;
+      status.innerText = 'Google에서 모델 목록을 가져오는 중입니다…';
+      try {
+        const models = await loadGeminiModels(apiKey);
+        if (document.getElementById('user-api-key').value.trim() !== apiKey) {
+          fillModelSelect([], '');
+          status.innerText = '키가 변경되었습니다. 모델 목록을 다시 조회해주세요.';
+          return;
+        }
+        fillModelSelect(models, localStorage.getItem('custom_gemini_model'));
+        status.innerText = `모델 목록 조회 성공: ${models.length}개. 모델을 선택하고 저장해주세요. 목록 조회 성공은 답장 생성 권한·할당량을 보장하지 않습니다.`;
+      } catch (error) {
+        availableGeminiModels = [];
+        modelListKey = '';
+        fillModelSelect([], '');
+        status.innerText = showApiError(error, '모델 목록 조회 실패') + '\n' + redactApiSecret(error.help);
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    function saveApiKey() {
+      const key = document.getElementById('user-api-key').value.trim();
+      const model = document.getElementById('user-api-model').value;
+      const oldKey = localStorage.getItem('custom_gemini_key') || '';
+      if (key) {
+        localStorage.setItem('custom_gemini_key', key);
+        if (modelListKey === key && availableGeminiModels.some(item => item.name === model)) localStorage.setItem('custom_gemini_model', model);
+        else if (key !== oldKey) localStorage.removeItem('custom_gemini_model');
+        showToast('API 설정이 저장되었습니다.');
+      } else {
+        localStorage.removeItem('custom_gemini_key');
+        localStorage.removeItem('custom_gemini_model');
+        availableGeminiModels = [];
+        modelListKey = '';
+        showToast('API 키가 제거되었습니다. 사용하려면 다시 입력해주세요.');
+      }
+      toggleApiModal(false);
+    }
+
+
+    // Drag and Drop Effects
+    function handleDragOver(e, type) {
+      e.preventDefault();
+      document.getElementById(`${type}-dropzone`).classList.add('drag-active');
+    }
+
+    function handleDragLeave(type) {
+      document.getElementById(`${type}-dropzone`).classList.remove('drag-active');
+    }
+
+    function handleDrop(e, type) {
+      e.preventDefault();
+      handleDragLeave(type);
+      const file = e.dataTransfer.files[0];
+      if (file && file.type.startsWith('image/')) {
+        processFile(file, type);
+      }
+    }
+
+    function handleImageUpload(event, type) {
+      const file = event.target.files[0];
+      if (file) processFile(file, type);
+    }
+
+    function processFile(file, type) {
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const base64Data = e.target.result.split(',')[1];
+        if (type === 'prev') {
+          prevImageBase64 = { data: base64Data, mimeType: file.type };
+          document.getElementById('prev-img-preview').src = e.target.result;
+          document.getElementById('prev-img-placeholder').classList.add('hidden');
+          document.getElementById('prev-img-preview-container').classList.remove('hidden');
+        } else {
+          targetImageBase64 = { data: base64Data, mimeType: file.type };
+          document.getElementById('target-img-preview').src = e.target.result;
+          document.getElementById('target-img-placeholder').classList.add('hidden');
+          document.getElementById('target-img-preview-container').classList.remove('hidden');
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function removeImage(type, event) {
+      if(event) event.stopPropagation();
+      if (type === 'prev') {
+        prevImageBase64 = null;
+        document.getElementById('prev-img-input').value = '';
+        document.getElementById('prev-img-preview-container').classList.add('hidden');
+        document.getElementById('prev-img-placeholder').classList.remove('hidden');
+      } else {
+        targetImageBase64 = null;
+        document.getElementById('target-img-input').value = '';
+        document.getElementById('target-img-preview-container').classList.add('hidden');
+        document.getElementById('target-img-placeholder').classList.remove('hidden');
+      }
+    }
+
+    function showToast(message, isError = false) {
+      const toast = document.getElementById('toast');
+      const toastMsg = document.getElementById('toast-msg');
+      const toastIcon = document.getElementById('toast-icon');
+
+      toastMsg.innerText = message;
+      toastIcon.className = isError ? "fa-solid fa-circle-exclamation text-rose-400" : "fa-solid fa-check-circle text-green-400";
+
+      toast.classList.remove('translate-x-full', 'opacity-0');
+      setTimeout(() => {
+        toast.classList.add('translate-x-full', 'opacity-0');
+      }, 3000);
+    }
+
+    function copyToClipboard(text) {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      document.body.appendChild(textarea);
+      textarea.select();
+      try {
+        document.execCommand('copy');
+        showToast('답장이 클립보드에 복사되었습니다!');
+      } catch (err) {
+        showToast('복사에 실패했습니다.', true);
+      }
+      document.body.removeChild(textarea);
+    }
+
+    function resetAll() {
+      removeImage('prev');
+      removeImage('target');
+      document.getElementById('prev-text-input').value = '';
+      document.getElementById('target-text-input').value = '';
+      document.getElementById('custom-direction').value = '';
+      document.getElementById('results-section').classList.add('hidden');
+      showToast('초기화되었습니다.');
+    }
+
+    async function generateReplies() {
+      const age = document.getElementById('user-age').value || 25;
+      const gender = document.getElementById('user-gender').value;
+      const relation = document.getElementById('user-relation').value;
+      const tone = document.querySelector('input[name="user-tone"]:checked')?.value || "자연스럽게";
+      
+      const prevText = document.getElementById('prev-text-input').value.trim();
+      const targetText = document.getElementById('target-text-input').value.trim();
+      const direction = document.getElementById('custom-direction').value.trim();
+
+      if (!targetImageBase64 && !targetText) {
+        showToast('답장해야 할 메시지(사진 또는 텍스트)를 입력해주세요!', true);
+        return;
+      }
+
+      if (!localStorage.getItem('custom_gemini_key')?.trim()) {
+        showToast('Gemini API 키를 먼저 입력해주세요.', true);
+        toggleApiModal(true);
+        return;
+      }
+
+      if (document.getElementById('generate-btn').disabled) return;
+      clearApiError();
+      document.getElementById('generate-btn').disabled = true;
+      document.getElementById('generate-btn').classList.add('opacity-50');
+      document.getElementById('loading-state').classList.remove('hidden');
+      document.getElementById('results-section').classList.add('hidden');
+
+      const userInstruction = `
+[사용자 기본 설정]
+- 작성자 정보: ${age}세 (${gender})
+- 받는 사람과의 관계: ${relation}
+- 핵심 말투 어조: ${tone}
+${direction ? `- 특수 목적/방향성: ${direction}` : ''}
+
+[분석 및 답장 작성 지침]
+1. 첨부된 이미지 속 텍스트(OCR)와 텍스트 입력을 바탕으로 상대방의 질문이나 메시지를 정확히 파악하세요.
+2. 이전 대화 캡처가 있다면 상대방의 말투나 전반적인 대화 흐름을 파악하여 자연스럽게 이어지도록 하세요.
+3. ${relation} 관계에 어울리는 한국어 호칭, 존댓말/반말 여부를 완벽히 지키세요.
+4. 옵션 4가지를 아래 스타일로 각각 1개씩 작성하세요:
+   - 옵션 1: 무난하고 친근한 기본 답장
+   - 옵션 2: 위트있고 센스있는 답장
+   - 옵션 3: 정중하거나 예의바른 답장
+   - 옵션 4: 짧고 명확한 답장
+
+반드시 아래 JSON 구조로만 답변해야 합니다:
+{
+  "detectedTargetMessage": "상대방 메시지 짧은 요약",
+  "options": [
+    {
+      "typeTitle": "스타일 이름 (예: 무난함)",
+      "replyText": "추천 답장 문장",
+      "explanation": "이 답장의 뉘앙스 설명"
+    }
+  ]
+}
+`;
+
+      const contentsParts = [];
+
+      if (prevImageBase64) {
+        contentsParts.push({ text: "[1. 이전 대화 내역 캡처 이미지]:" });
+        contentsParts.push({ inlineData: prevImageBase64 });
+      }
+      if (prevText) {
+        contentsParts.push({ text: `[1. 이전 대화 부연 맥락]: ${prevText}` });
+      }
+
+      if (targetImageBase64) {
+        contentsParts.push({ text: "[2. 답장해야 할 상대 연락 캡처 이미지]:" });
+        contentsParts.push({ inlineData: targetImageBase64 });
+      }
+      if (targetText) {
+        contentsParts.push({ text: `[2. 답장해야 할 상대 연락 텍스트]: ${targetText}` });
+      }
+
+      contentsParts.push({ text: userInstruction });
+
+      const payload = {
+        contents: [{ role: "user", parts: contentsParts }],
+        generationConfig: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: "OBJECT",
+            properties: {
+              detectedTargetMessage: { type: "STRING" },
+              options: {
+                type: "ARRAY",
+                items: {
+                  type: "OBJECT",
+                  properties: {
+                    typeTitle: { type: "STRING" },
+                    replyText: { type: "STRING" },
+                    explanation: { type: "STRING" }
+                  },
+                  required: ["typeTitle", "replyText", "explanation"]
+                }
+              }
+            },
+            required: ["detectedTargetMessage", "options"]
+          }
+        }
+      };
+
+      const apiKey = localStorage.getItem('custom_gemini_key').trim();
+      let model = '';
+      try {
+        const models = modelListKey === apiKey && availableGeminiModels.length
+          ? availableGeminiModels : await loadGeminiModels(apiKey);
+        const preferred = localStorage.getItem('custom_gemini_model');
+        model = models.some(item => item.name === preferred) ? preferred : models[0].name;
+        localStorage.setItem('custom_gemini_model', model);
+        const result = await geminiJson(model + ':generateContent', apiKey, payload);
+        const candidate = result.candidates?.[0];
+        const blockReason = result.promptFeedback?.blockReason;
+        if (blockReason) throw apiIssue('CONTENT_BLOCKED', `Google이 입력 처리를 중단했습니다: ${blockReason}`, '다른 내용의 메시지로 시도해주세요.');
+        if (candidate?.finishReason && candidate.finishReason !== 'STOP') {
+          throw apiIssue('INCOMPLETE_RESPONSE', `답장 생성이 완료되지 않았습니다: ${candidate.finishReason}`, '메시지를 짧게 바꾸거나 다른 모델로 시도해주세요.');
+        }
+        const jsonText = candidate?.content?.parts?.filter(part => !part.thought && typeof part.text === 'string').map(part => part.text).join('');
+        if (!jsonText) throw apiIssue('EMPTY_RESPONSE', 'Google이 답장 텍스트를 반환하지 않았습니다.', '다른 메시지 또는 다른 모델로 다시 시도해주세요.');
+        let parsedData;
+        try { parsedData = JSON.parse(jsonText); }
+        catch { throw apiIssue('INVALID_REPLY_JSON', 'Google의 답장을 정해진 JSON 형식으로 읽을 수 없습니다.', '다시 생성하거나 다른 모델을 선택해주세요.'); }
+        if (typeof parsedData?.detectedTargetMessage !== 'string' || !Array.isArray(parsedData.options) || parsedData.options.length !== 4 ||
+            !parsedData.options.every(option => ['typeTitle', 'replyText', 'explanation'].every(field => typeof option?.[field] === 'string' && option[field].trim()))) {
+          throw apiIssue('INVALID_REPLY_FORMAT', 'Google의 응답에 필요한 답장 4개 또는 필수 항목이 없습니다.', '다시 생성하거나 다른 모델을 선택해주세요.');
+        }
+        renderResults(parsedData);
+      } catch (error) {
+        showApiError(error, model ? `답장 생성 실패 · ${model.replace(/^models\//, '')}` : '모델 목록 조회 실패');
+      } finally {
+        document.getElementById('loading-state').classList.add('hidden');
+        document.getElementById('generate-btn').disabled = false;
+        document.getElementById('generate-btn').classList.remove('opacity-50');
+      }
+    }
+
+
+    function renderResults(data) {
+      const container = document.getElementById('reply-cards-container');
+      container.innerHTML = '';
+
+      if (data.detectedTargetMessage) {
+        document.getElementById('detected-msg-badge').innerText = `상대 연락 요약: "${data.detectedTargetMessage}"`;
+      }
+
+      const styles = [
+        { badge: 'bg-blue-100 text-blue-700', icon: 'fa-thumbs-up' },
+        { badge: 'bg-amber-100 text-amber-700', icon: 'fa-wand-magic-sparkles' },
+        { badge: 'bg-emerald-100 text-emerald-700', icon: 'fa-user-check' },
+        { badge: 'bg-purple-100 text-purple-700', icon: 'fa-bolt' }
+      ];
+
+      data.options.forEach((opt, idx) => {
+        const st = styles[idx % styles.length];
+        const card = document.createElement('div');
+        card.className = "bg-white rounded-2xl p-4 border border-slate-200 shadow-sm space-y-3";
+
+        card.innerHTML = `
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold px-2.5 py-1 rounded-full ${st.badge} flex items-center gap-1.5">
+              <i class="fa-solid ${st.icon}"></i> ${escapeHtml(opt.typeTitle)}
+            </span>
+            <button data-copy-reply class="text-xs text-blue-600 bg-blue-50 hover:bg-blue-100 font-semibold px-3 py-1.5 rounded-xl transition-all flex items-center gap-1">
+              <i class="fa-regular fa-copy"></i> 복사하기
+            </button>
+          </div>
+
+          <div class="bg-kakao-chatBg rounded-xl p-3 text-slate-900 text-sm font-medium leading-relaxed select-all">
+            ${escapeHtml(opt.replyText)}
+          </div>
+
+          <p class="text-[11px] text-slate-400 flex items-center gap-1">
+            <i class="fa-solid fa-circle-info"></i> ${escapeHtml(opt.explanation)}
+          </p>
+        `;
+
+        card.querySelector('[data-copy-reply]').addEventListener('click', () => copyToClipboard(opt.replyText));
+        container.appendChild(card);
+      });
+
+      document.getElementById('results-section').classList.remove('hidden');
+      document.getElementById('results-section').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function escapeHtml(text) {
+      return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+    }
+
+    function escapeQuotes(text) {
+      return text.replace(/`/g, '\\`').replace(/\$/g, '\\$');
+    }
+  </script>
+</body>
+</html>
